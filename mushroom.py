@@ -11,287 +11,309 @@ Usage: `<python> mushroom.py <dataset-path>`.
 Note: `<dataset-path>` is optional, defaults to `agaricus-lepiota.data`.
 """
 
-# Import MatPlotLib for classes.
-import matplotlib as mp
+# Import the system utilities.
+import sys
+
+# Import MatPlotLib for type classes.
+import matplotlib as mpl
 
 # Import MatPlotLib PyPlot for GUI.
-import matplotlib.pyplot as pt
+import matplotlib.pyplot as plt
+
+# Import MatPlotLib widgets.
+import matplotlib.widgets as wdg
 
 # Import NumPy for calculations.
-import numpy as np
+import numpy as npy
 
-# Import the iteration cycle.
-from itertools import cycle
+# Import the type utilities.
+import typing as typ
 
-# Import JSON encoder for debug printing.
-from json import dumps
+# Import the iteration utilities.
+import itertools as itr
 
-# Import the command line arguments.
-from sys import argv
+def load_dataset() -> npy.ndarray:
+    """Loads the dataset data from the dataset file."""
 
-# Import MatPlotLib button and text box widgets.
-from matplotlib.widgets import Button, TextBox
+    # Get the dataset path from the CLI or use default one.
+    path = sys.argv[1] if len(sys.argv) > 1 else "agaricus-lepiota.data"
 
-class Probabilities:
-    """Probabilities for each attribute value."""
+    # Return the dataset data.
+    return npy.loadtxt(path, "str", "#", ",")
 
-    def __init__(self) -> None:
-        """Calculates and saves the probabilities."""
+def get_avg_prob(probs: typ.Tuple[float]) -> float:
+    """Finds the average probability of the probabilities."""
 
-        # Get the dataset path from the CLI or use default one.
-        path = argv[1] if len(argv) > 1 else "agaricus-lepiota.data"
+    # Return the average probability.
+    return npy.average(probs)
 
-        # Load the dataset data.
-        data = np.loadtxt(path, delimiter=",", dtype="str")
+def get_pos(data: npy.ndarray) -> typ.Tuple[npy.ndarray]:
+    """Gets the list of possible values for each attribute."""
 
-        # Create the base dictionaries list.
-        self.__probabilities = [dict() for _ in range(data.shape[1] - 1)]
+    # Filter the possible unique attribute values from the data.
+    return tuple(npy.unique(data[:, i]) for i in range(data.shape[1]))
 
-        # Go through the data rows.
-        np.apply_along_axis(self.__cb_each, axis=1, arr=data)
+def get_probs(data: npy.ndarray, attrs: typ.Tuple[str]) -> typ.Tuple[float]:
+    """Gets the probabilities for the provided attribute values."""
 
-        # Go through the attributes.
-        for attribute in self.__probabilities:
+    # Set all and poisonous row filters.
+    fa, fp = data[:, 1:] == attrs, npy.transpose([data[:, 0] == "p"])
 
-            # Go through the attribute values.
-            for key, value in attribute.items():
+    # Calculate the amounts of all and poisonous attribute values occurences.
+    a, p = npy.sum(fa, 0), npy.sum(npy.logical_and(fa, fp), 0)
 
-                # Replace the [common, poisonous] array with probability.
-                attribute[key] = value[1] / value[0]
+    # Do not show warnings on invalid arithmetical operations.
+    with npy.errstate(invalid="ignore"):
 
-    def average(self, values: list) -> float:
-        """Calculates the average probability."""
+        # Generate the probabilities (1.0 is set if 0 by 0 division is done).
+        return tuple(npy.nan_to_num(p / a, nan=1.0))
 
-        # Return the average probability.
-        return sum(values) / len(values)
+def gen_rnd_mushroom(pos: typ.Tuple[npy.ndarray]) -> str:
+    """Generates a random mushroom using the possible attributes."""
 
-    def filter(self, values: str) -> list:
-        """Filters the probability by its keys."""
+    # Set the string piece generator function.
+    f = lambda v: f"{npy.random.choice(v)},"
 
-        # Parse the input.
-        values = values.split(",")
+    # Return the string with random attribute values separated by comma.
+    return "".join(f(v) for v in itr.islice(pos, 1, None))[:-1]
 
-        # Go through the parsed input indexes.
-        for i in range(len(values)):
+class GUI:
+    """The user interface based on the matplotlib package."""
 
-            # Check if the attribute value is not found.
-            if values[i] not in self.__probabilities[i]:
+    # Set the grid options.
+    __GRID = {
+        # The line color.
+        "color": "darkgrey",
 
-                # Set the related probability to 1.0.
-                values[i] = 1.0
+        # The line type.
+        "linestyle": "dashed",
 
-                # Continue the iterations.
-                continue
+        # The line width.
+        "linewidth": 1,
+    }
 
-            # Set the correct probability.
-            values[i] = self.__probabilities[i][values[i]]
+    # Set the legend options.
+    __LEGEND = {
+        # The relative to location position.
+        "bbox_to_anchor": (1.0, 0.0),
 
-        # Return the probability list.
-        return values
+        # The font size (here: extra small).
+        "fontsize": "x-small",
 
-    def get(self) -> list:
-        """Gets the calculated probabilities."""
+        # The location (here: lower left).
+        "loc": 3,
+    }
 
-        # Just return the calculted probabilities.
-        return self.__probabilities
+    # Set all the attribute names.
+    __NAMES = (
+        # Name in agaricus-lepiota.names: cap-shape.
+        "cap shape",
 
-    def log(self) -> None:
-        """Logs the probabilities in STDOUT."""
+        # Name in agaricus-lepiota.names: cap-surface.
+        "cap surface",
 
-        # Just print the probabilities in STDOUT.
-        print(dumps(self.__probabilities, indent=2))
+        # Name in agaricus-lepiota.names: cap-color.
+        "cap color",
 
-    def random(self) -> str:
-        """Generates a random mushroom as a data string."""
+        # Name in agaricus-lepiota.names: bruises?.
+        "bruises?",
 
-        # Set the initial empty data string.
-        string = ""
+        # Name in agaricus-lepiota.names: odor.
+        "odor",
 
-        # Go through the attributes.
-        for dict in self.__probabilities:
+        # Name in agaricus-lepiota.names: gill-attachment.
+        "gill attachment",
 
-            # Get the attribute values.
-            keys = list(dict.keys())
+        # Name in agaricus-lepiota.names: gill-spacing.
+        "gill spacing",
 
-            # Add the random value to the data string.
-            string += keys[np.random.randint(0, len(keys))] + ","
+        # Name in agaricus-lepiota.names: gill-size.
+        "gill size",
 
-        # Return the generated data string.
-        return string[:-1]
+        # Name in agaricus-lepiota.names: gill-color.
+        "gill color",
 
-    def __cb_each(self, row):
-        """Calculates the further probabilities with `row`."""
+        # Name in agaricus-lepiota.names: stalk-shape.
+        "stalk shape",
 
-        # Go through the attribute indexes.
-        for i in range(1, len(row)):
+        # Name in agaricus-lepiota.names: stalk-root.
+        "stalk root",
 
-            # Skip the unknown value.
-            if row[i] == "?": continue
+        # Name in agaricus-lepiota.names: stalk-surface-above-ring.
+        "stalk surface above ring",
 
-            # Set the pointer to the current attribute.
-            pointer = self.__probabilities[i - 1]
+        # Name in agaricus-lepiota.names: stalk-surface-below-ring.
+        "stalk surface below ring",
 
-            # Set the default attribute values.
-            pointer.setdefault(row[i], np.zeros(2, dtype=int))
+        # Name in agaricus-lepiota.names: stalk-color-above-ring.
+        "stalk color above ring",
 
-            # Set the pointer to the attribute value.
-            pointer = pointer[row[i]]
+        # Name in agaricus-lepiota.names: stalk-color-below-ring.
+        "stalk color below ring",
 
-            # Increase the poisonous attribute values amount.
-            if row[0] == "p": pointer[1] += 1
+        # Name in agaricus-lepiota.names: veil-type.
+        "veil type",
 
-            # Increase the common attribute values amount.
-            pointer[0] += 1
+        # Name in agaricus-lepiota.names: veil-color.
+        "veil color",
 
-class UserInterface:
-    """The user interface made via MatPlotLib."""
+        # Name in agaricus-lepiota.names: ring-number.
+        "ring number",
 
-    def __init__(self, probabilities: Probabilities) -> None:
-        """Initializes the GUI by creating graphics."""
+        # Name in agaricus-lepiota.names: ring-type.
+        "ring type",
 
-        # Set the Pyplot window size.
-        pt.rcParams["figure.figsize"] = (8, 6)
+        # Name in agaricus-lepiota.names: spore-print-color.
+        "spore print color",
 
-        # Set the initial random mushroom.
-        mushroom = probabilities.random()
+        # Name in agaricus-lepiota.names: population.
+        "population",
 
-        # Pass the probabilities.
-        self.__probabilities = probabilities
+        # Name in agaricus-lepiota.names: habitat.
+        "habitat",
 
-        # Make the bar chart graphic.
-        self.__bar_axes = pt.axes([0.1, 0.30, 0.62, 0.6])
+        # Name in agaricus-lepiota.names: (no name, result).
+        "result (average)",
+    )
 
-        # Make the button "graphic".
-        self.__button_axes = pt.axes([0.1, 0.03, 0.8, 0.05])
+    # Set the attribute names range.
+    __NRANGE = range(len(__NAMES))
 
-        # Make the random button "graphic".
-        self.__random_axes = pt.axes([0.1, 0.08, 0.8, 0.05])
+    def __init__(self, data: npy.ndarray) -> None:
+        """Initializes the GUI by preparing matplotlib window."""
 
-        # Make the text box "graphic".
-        self.__text_box_axes = pt.axes([0.1, 0.13, 0.8, 0.05])
+        # Set the matplotlib window size.
+        plt.rcParams["figure.figsize"] = (8, 6)
 
-        # Create the submit button.
-        self.__button = Button(self.__button_axes, "submit")
+        # Set the data as parameter.
+        self.__data = data
 
-        # Create the raddom button.
-        self.__random = Button(self.__random_axes, "random")
+        # Set the possible attribute values.
+        self.__pos = get_pos(data)
 
-        # Create the text box.
-        self.__text_box = TextBox(self.__text_box_axes, "input", mushroom)
+        # Initialize the axes.
+        self.__init_axes()
 
-        # Bind the submit button to the graphing function.
-        self.__button.on_clicked(self.__cb_submit)
+        # Initialize the UI components.
+        self.__init_cont()
 
-        # Bind the random button to the random mushroom function.
-        self.__random.on_clicked(self.__cb_random)
-
-        # Automatically submit for the first time.
-        self.__cb_submit(None)
+        # Submit for the first time.
+        self.__cb_sub(None)
 
         # Show the plot window.
-        pt.show()
+        plt.show(block=True)
 
-    def __cb_random(self, _) -> None:
-        """Sets the random mushroom to the text box."""
+    def __cb_hnd(self, cmap: mpl.colors.Colormap, i: int) -> None:
+        """Generates a rectangle used as a legend handler."""
 
-        # Update the text box text.
-        self.__text_box.set_val(self.__probabilities.random())
+        # Return the rectangle of color from the color map.
+        return plt.Rectangle((0, 0), 1, 1, color=cmap(i))
 
-        # Automatically submit.
-        self.__cb_submit(None)
+    def __cb_rnd(self, _: mpl.backend_bases.MouseEvent) -> None:
+        """Sets the random mushroom and submits it."""
 
-    def __cb_submit(self, _) -> None:
+        # Update the text box text and automatically submit.
+        self.__cb_sub(self.__txt.set_val(gen_rnd_mushroom(self.__pos)))
+
+    def __cb_sub(self, _: mpl.backend_bases.MouseEvent) -> None:
         """Draws a bar chart when the input is sibmitted."""
 
+        # Get the input attribute values.
+        attrs = self.__txt.text.split(",")
+
         # Get the probabilities as a list.
-        probs = self.__probabilities.filter(self.__text_box.text)
-
-        # Get the list length.
-        length = len(probs) + 1
-
-        # Create the bar color map.
-        cmap = pt.cm.get_cmap("jet", length)
-
-        # Generate the var colors.
-        colors = [cmap(i) for i in range(0, length)]
-
-        # Set the probabilities names.
-        names = [
-            "cap-shape",
-            "cap-surface",
-            "cap-color",
-            "bruises?",
-            "odor",
-            "gill-attachment",
-            "gill-spacing",
-            "gill-size",
-            "gill-color",
-            "stalk-shape",
-            "stalk-root",
-            "stalk-surface-above-ring",
-            "stalk-surface-below-ring",
-            "stalk-color-above-ring",
-            "stalk-color-below-ring",
-            "veil-type",
-            "veil-color",
-            "ring-number",
-            "ring-type",
-            "spore-print-color",
-            "population",
-            "habitat",
-            "result (overall)"
-        ]
+        probs = list(get_probs(self.__data, attrs))
 
         # Append the average probability.
-        probs.append(self.__probabilities.average(probs))
+        probs.append(get_avg_prob(probs))
 
-        # Increase the length because or reindex.
-        length += 1
+        # Get the probabilities list length.
+        length = len(probs)
 
-        # Clear the bar axes before drawing.
-        self.__bar_axes.clear()
+        # Draw the plot base.
+        self.__draw_bar_base(length)
 
-        # Set the axes grid properties.
-        self.__bar_axes.grid(color="darkgrey", linestyle="--", linewidth=1)
+        # Draw the plot content.
+        self.__draw_bar_cont(probs, length)
+
+        # Redraw all the axes.
+        plt.draw()
+
+    def __draw_bar_base(self, length: int) -> None:
+        """Draws the bar chart plot base: coordinates and attributes."""
+
+        # Clear the axes beforehand.
+        self.__bar_ax.clear()
 
         # Set the X axis label.
-        self.__bar_axes.set_xlabel("attributes")
+        self.__bar_ax.set_xlabel("attributes")
 
         # Set the Y axis label.
-        self.__bar_axes.set_ylabel("probability")
+        self.__bar_ax.set_ylabel("probability")
 
         # Set the X axis ticks.
-        self.__bar_axes.set_xticks(np.arange(1, length, 2))
+        self.__bar_ax.set_xticks(npy.arange(1, length, 2))
 
         # Set the Y axis ticks.
-        self.__bar_axes.set_yticks(np.arange(0.0, 1.1, 0.2))
+        self.__bar_ax.set_yticks(npy.arange(0.0, 1.1, 0.2))
+
+    def __draw_bar_cont(self, probs: typ.List[float], length: int) -> None:
+        """Draws the bar chart plot content: the grid, the bar chart, ..."""
+
+        # Set the axes grid properties.
+        self.__bar_ax.grid(**self.__GRID)
+
+        # Create the bar color map.
+        cmap = plt.cm.get_cmap("rainbow", length)
+
+        # Generate the various colors.
+        cols = [cmap(i) for i in range(0, length)]
 
         # Draw the bar chart of all probabilities.
-        self.__bar_axes.bar(range(1, length), height=probs, color=colors)
+        self.__bar_ax.bar(range(1, length + 1), probs, color=cols)
+
+        # Generate the legend handles.
+        hand = [self.__cb_hnd(cmap, i) for i in self.__NRANGE]
 
         # Draw the bar chart legend.
-        self.__bar_axes.legend(
-            # The handles (colors).
-            handles=[self.__handle(cmap, i) for i in range(0, len(names))],
+        self.__bar_ax.legend(hand, self.__NAMES, **self.__LEGEND)
 
-            # The other options.
-            bbox_to_anchor=(1., 0.), labels=names, fontsize='x-small', loc=3
-        )
+    def __init_axes(self) -> None:
+        """Initializes the axes on which UI and graphics will be drawn."""
 
-        # Redraw the axes.
-        pt.draw()
+        # Set the bar chart graphic.
+        self.__bar_ax = plt.axes((0.1, 0.30, 0.62, 0.6))
 
-    def __handle(self, cmap: mp.colors.Colormap, i: int) -> pt.Rectangle:
-        """Gets the legend colored rectangle handle."""
+        # Set the submit button "graphic".
+        self.__sub_ax = plt.axes((0.1, 0.03, 0.8, 0.05))
 
-        # Return the rectangle handle.
-        return pt.Rectangle((0, 0), 1, 1, color=cmap(i))
+        # Set the random button "graphic".
+        self.__rnd_ax = plt.axes((0.1, 0.08, 0.8, 0.05))
 
-# Check if the script is run directly.
-if __name__ == "__main__":
-    # Create the probabilities instance.
-    # Wow, you have found a stick figure: :)-|--< Take care of it.
-    probabilities = Probabilities()
+        # Set the text box "graphic".
+        self.__txt_ax = plt.axes((0.1, 0.13, 0.8, 0.05))
 
-    # Create the user interface instance.
-    user_interface = UserInterface(probabilities)
+    def __init_cont(self) -> None:
+        """Initializes the UI content - inputs, buttons, ..."""
+
+        # Generate a random mushroom.
+        mushroom = gen_rnd_mushroom(self.__pos)
+
+        # Set the random button.
+        self.__rnd = wdg.Button(self.__rnd_ax, "random")
+
+        # Set the submit button.
+        self.__sub = wdg.Button(self.__sub_ax, "submit")
+
+        # Set the text box with the mushroom.
+        self.__txt = wdg.TextBox(self.__txt_ax, "input", mushroom)
+
+        # Bind the submit button to the bar chart graphing function.
+        self.__sub.on_clicked(self.__cb_sub)
+
+        # Bind the random button to the random mushroom function.
+        self.__rnd.on_clicked(self.__cb_rnd)
+
+# Load the data from the dataset and load GUI if the script is run directly.
+# Wow, you have found the hidden stick figure: :)-|--<! Take care of it.
+if __name__ == "__main__": GUI(load_dataset())
