@@ -50,14 +50,23 @@ def get_avg_prob(probs: typ.Tuple[float]) -> float:
 def get_pos(data: npy.ndarray) -> typ.Tuple[npy.ndarray]:
     """Gets the list of possible values for each attribute."""
 
+    # Set the function that checks values for uniqueness and existance.
+    unique_and_exist = lambda i: npy.setdiff1d(npy.unique(data[:, i]), ("?",))
+
     # Filter the possible unique attribute values from the data.
-    return tuple(npy.unique(data[:, i]) for i in range(data.shape[1]))
+    return tuple(unique_and_exist(i) for i in range(data.shape[1]))
 
 def get_probs(data: npy.ndarray, attrs: typ.Tuple[str]) -> typ.Tuple[float]:
     """Gets the probabilities for the provided attribute values."""
 
-    # Set all and poisonous row filters.
-    fa, fp = data[:, 1:] == attrs, npy.transpose([data[:, 0] == "p"])
+    # Set the non-existing attribute values comparison tuple.
+    nv = ("?",) * (data.shape[1] - 1)
+
+    # Set the all matching attribute values row filter.
+    fa = npy.logical_and(data[:, 1:] != nv, data[:, 1:] == attrs)
+
+    # Set the poisonous matching attribute values row filter.
+    fp = npy.transpose([data[:, 0] == "p"])
 
     # Calculate the amounts of all and poisonous attribute values occurences.
     a, p = npy.sum(fa, 0), npy.sum(npy.logical_and(fa, fp), 0)
@@ -65,8 +74,8 @@ def get_probs(data: npy.ndarray, attrs: typ.Tuple[str]) -> typ.Tuple[float]:
     # Do not show warnings on invalid arithmetical operations.
     with npy.errstate(invalid="ignore"):
 
-        # Generate the probabilities (1.0 is set if 0 by 0 division is done).
-        return tuple(npy.nan_to_num(p / a, nan=1.0))
+        # Generate the probabilities (0.5 is set if 0 by 0 division is done).
+        return tuple(npy.nan_to_num(p / a, nan=0.5))
 
 def gen_rnd_mushroom(pos: typ.Tuple[npy.ndarray]) -> str:
     """Generates a random mushroom using the possible attributes."""
